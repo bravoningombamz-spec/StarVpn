@@ -1,0 +1,46 @@
+workflows:
+  ios-build:
+    name: Star VPN iOS Build
+    max_build_duration: 60
+    environment:
+      xcode: latest
+
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+
+      - name: Generate Xcode project
+        script: xcodegen generate --spec project.yml
+
+      - name: Build archive (unsigned)
+        script: |
+          xcodebuild \
+            -project StarVPN.xcodeproj \
+            -scheme StarVPN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$CM_BUILD_DIR/StarVPN.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE=""
+
+      - name: Package IPA
+        script: |
+          APP=$(find "$CM_BUILD_DIR/StarVPN.xcarchive" -name "*.app" -not -name "*.appex" | head -1)
+          echo "Found app: $APP"
+
+          PAYLOAD="$CM_BUILD_DIR/Payload"
+          rm -rf "$PAYLOAD"
+          mkdir -p "$PAYLOAD"
+          cp -r "$APP" "$PAYLOAD/"
+
+          cd "$CM_BUILD_DIR"
+          zip -r StarVPN_unsigned.ipa Payload/
+
+          echo "IPA size: $(du -sh $CM_BUILD_DIR/StarVPN_unsigned.ipa)"
+
+    artifacts:
+      - $CM_BUILD_DIR/StarVPN_unsigned.ipa
+      - $CM_BUILD_DIR/StarVPN.xcarchive
