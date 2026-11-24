@@ -6,8 +6,6 @@ workflows:
       xcode: latest
       vars:
         P12_PASSWORD: "1"
-      # CM_CERTIFICATE and CM_PROVISIONING_PROFILE are set in
-      # Codemagic dashboard → Environment variables (see README)
 
     scripts:
       - name: Install XcodeGen
@@ -18,27 +16,18 @@ workflows:
 
       - name: Import certificate and profile
         script: |
-          # Write cert from env var
           echo "$CM_CERTIFICATE" | base64 --decode > /tmp/cert.p12
-
-          # Write profile from env var
           echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
 
-          # Install profile
-          PROFILE_UUID=$(python3 -c "
-import plistlib, sys
-with open('/tmp/profile.mobileprovision', 'rb') as f:
-    data = f.read()
-start = data.find(b'<?xml')
-end = data.find(b'</plist>') + 8
-p = plistlib.loads(data[start:end])
-print(p['UUID'])
-")
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< $(security cms -D -i /tmp/profile.mobileprovision 2>/dev/null))
+          if [ -z "$PROFILE_UUID" ]; then
+            PROFILE_UUID=$(grep -a -A1 '<key>UUID</key>' /tmp/profile.mobileprovision | tail -1 | sed 's/.*<string>\(.*\)<\/string>.*/\1/' | tr -d '[:space:]')
+          fi
           echo "Profile UUID: $PROFILE_UUID"
 
-          # Import cert into keychain
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+
           KEYCHAIN_PATH=$CM_BUILD_DIR/signing.keychain
           security create-keychain -p "" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
@@ -47,7 +36,6 @@ print(p['UUID'])
           security list-keychain -d user -s "$KEYCHAIN_PATH"
           security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
 
-          # Get signing identity name
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)"/\1/')
           echo "Signing identity: $IDENTITY"
           echo "SIGNING_IDENTITY=$IDENTITY" >> $CM_ENV
@@ -63,7 +51,6 @@ print(p['UUID'])
             archive \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
             DEVELOPMENT_TEAM=8CAEUC6576
 
       - name: Package signed IPA
