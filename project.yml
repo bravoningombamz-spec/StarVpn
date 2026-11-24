@@ -1,0 +1,58 @@
+name: StarVPN
+options:
+  bundleIdPrefix: com.starvpn
+  deploymentTarget:
+    iOS: "15.0"
+  xcodeVersion: "15"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: 5.9
+    IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_BITCODE: NO
+    DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+
+targets:
+
+  StarVPN:
+    type: application
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: StarVPN
+      - path: Shared
+    info:
+      path: StarVPN/Info.plist
+    entitlements:
+      path: StarVPN/StarVPN.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starvpn.app
+        PRODUCT_NAME: StarVPN
+        INFOPLIST_FILE: StarVPN/Info.plist
+        CODE_SIGN_ENTITLEMENTS: StarVPN/StarVPN.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: 5.9
+    dependencies:
+      - target: StarVPNExtension
+
+  StarVPNExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "15.0"
+    sources:
+      - path: StarVPNExtension
+      - path: Shared
+    info:
+      path: StarVPNExtension/Info.plist
+    entitlements:
+      path: StarVPNExtension/StarVPNExtension.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.starvpn.app.tunnel
+        PRODUCT_NAME: StarVPNExtension
+        INFOPLIST_FILE: StarVPNExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: StarVPNExtension/StarVPNExtension.entitlements
+        SWIFT_VERSION: 5.9

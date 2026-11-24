@@ -1,0 +1,50 @@
+workflows:
+  ios-build:
+    name: Star VPN iOS Build
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      vars:
+        BUNDLE_ID: "com.starvpn.app"
+        EXTENSION_BUNDLE_ID: "com.starvpn.app.tunnel"
+
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+
+      - name: Generate Xcode project
+        script: xcodegen generate --spec project.yml
+
+      - name: Build archive (unsigned)
+        script: |
+          xcodebuild \
+            -project StarVPN.xcodeproj \
+            -scheme StarVPN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath build/StarVPN.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE=""
+
+      - name: Export unsigned IPA
+        script: |
+          mkdir -p build/output
+
+          # Pull app from archive
+          APP_PATH=$(find build/StarVPN.xcarchive -name "*.app" | head -1)
+
+          mkdir -p build/output/Payload
+          cp -r "$APP_PATH" build/output/Payload/
+
+          cd build/output
+          zip -r ../../StarVPN_unsigned.ipa Payload/
+          cd ../..
+
+          echo "IPA built at StarVPN_unsigned.ipa"
+
+    artifacts:
+      - StarVPN_unsigned.ipa
+      - build/StarVPN.xcarchive
