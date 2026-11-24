@@ -1,0 +1,86 @@
+workflows:
+  ios-build:
+    name: Star VPN iOS Build
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      vars:
+        P12_PASSWORD: "1"
+      # CM_CERTIFICATE and CM_PROVISIONING_PROFILE are set in
+      # Codemagic dashboard → Environment variables (see README)
+
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+
+      - name: Generate Xcode project
+        script: xcodegen generate --spec project.yml
+
+      - name: Import certificate and profile
+        script: |
+          # Write cert from env var
+          echo "$CM_CERTIFICATE" | base64 --decode > /tmp/cert.p12
+
+          # Write profile from env var
+          echo "$CM_PROVISIONING_PROFILE" | base64 --decode > /tmp/profile.mobileprovision
+
+          # Install profile
+          PROFILE_UUID=$(python3 -c "
+import plistlib, sys
+with open('/tmp/profile.mobileprovision', 'rb') as f:
+    data = f.read()
+start = data.find(b'<?xml')
+end = data.find(b'</plist>') + 8
+p = plistlib.loads(data[start:end])
+print(p['UUID'])
+")
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp /tmp/profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/$PROFILE_UUID.mobileprovision
+          echo "Profile UUID: $PROFILE_UUID"
+
+          # Import cert into keychain
+          KEYCHAIN_PATH=$CM_BUILD_DIR/signing.keychain
+          security create-keychain -p "" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 7200 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "" "$KEYCHAIN_PATH"
+          security import /tmp/cert.p12 -k "$KEYCHAIN_PATH" -P "$P12_PASSWORD" -A -T /usr/bin/codesign
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN_PATH"
+
+          # Get signing identity name
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "Signing identity: $IDENTITY"
+          echo "SIGNING_IDENTITY=$IDENTITY" >> $CM_ENV
+
+      - name: Build and sign archive
+        script: |
+          xcodebuild \
+            -project StarVPN.xcodeproj \
+            -scheme StarVPN \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$CM_BUILD_DIR/StarVPN.xcarchive" \
+            archive \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            DEVELOPMENT_TEAM=8CAEUC6576
+
+      - name: Package signed IPA
+        script: |
+          APP=$(find "$CM_BUILD_DIR/StarVPN.xcarchive" -name "*.app" -not -name "*.appex" | head -1)
+          echo "Found app: $APP"
+
+          PAYLOAD="$CM_BUILD_DIR/Payload"
+          rm -rf "$PAYLOAD"
+          mkdir -p "$PAYLOAD"
+          cp -r "$APP" "$PAYLOAD/"
+
+          cd "$CM_BUILD_DIR"
+          zip -r StarVPN_signed.ipa Payload/
+
+          echo "IPA size: $(du -sh $CM_BUILD_DIR/StarVPN_signed.ipa)"
+
+    artifacts:
+      - $CM_BUILD_DIR/StarVPN_signed.ipa
+      - $CM_BUILD_DIR/StarVPN.xcarchive
